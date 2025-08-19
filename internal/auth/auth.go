@@ -33,12 +33,7 @@ func MakeJWT(
 	expiresIn time.Duration) (string, error) {
 		token := jwt.NewWithClaims(
 			jwt.SigningMethodHS256,
-			jwt.RegisteredClaims{
-				Issuer: "chirpy",
-				IssuedAt: jwt.NewNumericDate(time.Now().UTC()),
-				ExpiresAt: jwt.NewNumericDate(time.Now().UTC().Add(expiresIn)),
-				Subject: userID.String(),
-			},
+			createClaims(userID, expiresIn),
 		)
 		signedToken, err := token.SignedString([]byte(tokenSecret))
 		if err != nil {
@@ -47,3 +42,28 @@ func MakeJWT(
 		}
 		return signedToken, nil
 }
+
+func ValidateJWT(tokenString, tokenSecret string) (uuid.UUID, error) {
+	token, err := jwt.ParseWithClaims(
+		tokenString,
+		&jwt.RegisteredClaims{},
+		func(token *jwt.Token) (interface{}, error) {
+			return []byte(tokenSecret), nil},			
+		)
+		if err != nil {
+			slog.Error("Error parsing token", "error", err)
+			os.Exit(1)
+		}
+		if claims, ok := token.Claims.(*jwt.RegisteredClaims); ok && token.Valid {
+			return uuid.Parse(claims.Subject)
+		}
+		return uuid.Nil, nil
+}
+
+func createClaims(userID uuid.UUID, expiresIn time.Duration) jwt.RegisteredClaims {
+	return jwt.RegisteredClaims{
+		Issuer: "chirpy",
+		IssuedAt: jwt.NewNumericDate(time.Now().UTC()),
+		ExpiresAt: jwt.NewNumericDate(time.Now().UTC().Add(expiresIn)),
+		Subject: userID.String(),
+	}}
