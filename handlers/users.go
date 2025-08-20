@@ -29,7 +29,7 @@ func (cfg *APIConfig) CreateUser(w http.ResponseWriter, r *http.Request) {
 	reqUser := UserIn{}
 	err := decoder.Decode(&reqUser)
 	if err != nil {
-		slog.Error("Error decoding request: %s", err)
+		slog.Error("Error decoding request", "error", err)
 		return
 	}
 	if ! strings.Contains(reqUser.Email, "@") {
@@ -40,7 +40,7 @@ func (cfg *APIConfig) CreateUser(w http.ResponseWriter, r *http.Request) {
 
 	hashedPassword, err := auth.HashPassword(reqUser.Password)
 	if err != nil {
-		slog.Error("Error hashing password: %s", err)
+		slog.Error("Error hashing password", "error", err)
 		respondWithError(w, 500, "Could not hash password")
 		return
 	}
@@ -53,7 +53,7 @@ func (cfg *APIConfig) CreateUser(w http.ResponseWriter, r *http.Request) {
 		},
 	)
 	if err != nil {
-		slog.Error("Error creating user %s: %s", reqUser.Email, err)
+		slog.Error("Error creating user", "error", err, "email", reqUser.Email)
 		respondWithError(w, 500, "Could not create user")
 		return 
 	}
@@ -75,7 +75,7 @@ func (cfg *APIConfig) ResetUsers(w http.ResponseWriter, r *http.Request) {
 	cfg.fileserverHits.Store(0)
 	err := cfg.DBQueries.ResetUsers(r.Context())
 	if err != nil {
-		slog.Error("Error resetting users: %s", err)
+		slog.Error("Error resetting users", "error", err)
 		respondWithError(w, 500, "Could not reset users")
 		return
 	}

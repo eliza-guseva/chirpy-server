@@ -30,7 +30,7 @@ func (cfg *APIConfig) CreateChirp(w http.ResponseWriter, r *http.Request) {
 	reqChirp := ChirpIn{}
 	err := decoder.Decode(&reqChirp)
 	if err != nil {
-		slog.Error("Error decoding request: %s", err)
+		slog.Error("Error decoding request", "error", err)
 		respondWithError(w, 500, "Something went wrong")
 		return
 	}
@@ -39,14 +39,14 @@ func (cfg *APIConfig) CreateChirp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_, fixed := checkForProfane(reqChirp.Body)
-	UserID, err := uuid.Parse(reqChirp.UserID)
+	UserID, _ := uuid.Parse(reqChirp.UserID)
 	chirp, err := cfg.DBQueries.CreateChirp(r.Context(), 
 		db.CreateChirpParams{
 			Body: fixed,
 			UserID: UserID,
 		})
 	if err != nil {
-		slog.Error("Error creating chirp: %s", err)
+		slog.Error("Error creating chirp", "error", err)
 		respondWithError(w, 500, "Could not create chirp")
 		return
 	}
@@ -65,7 +65,7 @@ func (cfg *APIConfig) CreateChirp(w http.ResponseWriter, r *http.Request) {
 func (cfg *APIConfig) GetChirps(w http.ResponseWriter, r *http.Request) {
 	chirps, err := cfg.DBQueries.GetChirps(r.Context())
 	if err != nil {
-		slog.Error("Error getting chirps: %s", err)
+		slog.Error("Error getting chirps", "error", err)
 		respondWithError(w, 500, "Something went wrong")
 		return
 	}
@@ -90,14 +90,14 @@ func (cfg *APIConfig) GetChirp(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, 400, "Invalid chirp ID")
 		return
 	}
-	slog.Info("Getting chirp %s", chID)
+	slog.Info("Getting chirp", "id", chID)
 	chirp, err := cfg.DBQueries.GetChirp(r.Context(), chID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			respondWithError(w, 404, "Chirp not found")
 			return
 		}
-		slog.Error("Error getting the chirp %s", err)
+		slog.Error("Error getting the chirp", "error", err)
 		respondWithError(w, 500, "Something went wrong")
 		return
 	}
