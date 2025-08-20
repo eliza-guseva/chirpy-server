@@ -15,6 +15,7 @@ import (
 type UserIn struct {
 	Email string `json:"email"`
 	Password string `json:"password"`
+	ExpiresInSeconds int `json:"expires_in_seconds,omitempty"`
 }
 
 type UserOut struct {
@@ -22,6 +23,7 @@ type UserOut struct {
     CreatedAt time.Time `json:"created_at"`
     UpdatedAt time.Time `json:"updated_at"`
     Email     string    `json:"email"`
+	Token     string    `json:"token"`
 }
 
 func (cfg *APIConfig) CreateUser(w http.ResponseWriter, r *http.Request) {
@@ -40,7 +42,7 @@ func (cfg *APIConfig) CreateUser(w http.ResponseWriter, r *http.Request) {
 
 	hashedPassword, err := auth.HashPassword(reqUser.Password)
 	if err != nil {
-		slog.Error("Error hashing password", "error", err)
+		slog.Error("Error hashing passwoRd", "error", err)
 		respondWithError(w, 500, "Could not hash password")
 		return
 	}
@@ -99,7 +101,6 @@ func (cfg *APIConfig) Login(w http.ResponseWriter, r *http.Request) {
 
 	user, err := cfg.DBQueries.GetUser(r.Context(), reqUser.Email)
 	slog.Info("User", "email", reqUser.Email, "user", user)
-	slog.Info("Password", "password", reqUser.Password)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			respondWithError(w, 401, "Incorrect email or password")
@@ -114,11 +115,33 @@ func (cfg *APIConfig) Login(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, 401, "Incorrect email or password")
 		return
 	}
+	jwtToken, err := createTokenWithExp(reqUser, user)
+	if err != nil {
+		slog.Error("Error creating token", "error", err)
+		respondWithError(w, 500, "Could not create token")
+		return
+	}
+
 	respondWithJSON(w, 200, UserOut{
 		ID:        user.ID.String(),
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,
 		Email:     user.Email,
+		Token:     jwtToken,
 	})
 }
 
+func createTokenWithExp(reqUser UserIn, dbUser db.User) (string, error) {
+	hourInSec := 60*60*60
+	expiresIn := time.Duration(reqUser.ExpiresInSeconds)
+	if reqUser.ExpiresInSeconds == 0 || reqUser.ExpiresInSeconds > hourInSec {
+		expiresIn = time.Hour
+	}
+	
+	jwtToken, err := auth.MakeJWT(dbUser.ID, os.Getenv("JWT_SECRET"), expiresIn)
+	if err != nil {
+		slog.Error("Error creating token", "error", err)
+		return "", err
+	}
+	return jwtToken, nil
+}

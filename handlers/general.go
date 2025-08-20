@@ -6,13 +6,17 @@ import (
 	"html/template"
 	"net/http"
 	"sync/atomic"
+	"github.com/google/uuid"
 	"github.com/eliza-guseva/chirpy-server/internal/db"
+	"github.com/eliza-guseva/chirpy-server/internal/auth"
+	"log/slog"
+	"context"
 )
 
 type APIConfig struct {
 	fileserverHits atomic.Int32
 	DBQueries *db.Queries
-}
+	JWTSecret string}
 
 
 func (cfg *APIConfig) MiddlewareMetricsInc(handler http.Handler) http.Handler {
@@ -42,6 +46,37 @@ func (cfg *APIConfig) FSHits(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	templ.Execute(w, data)
+}
+
+func (cfg *APIConfig) RequireAuth(handler http.HandlerFunc) http.HandlerFunc {
+      return func(w http.ResponseWriter, r *http.Request) {
+          userID := cfg.Authenticate(w, r)
+          if userID == uuid.Nil {
+          	return
+		  }
+
+          ctx := context.WithValue(r.Context(), "userID", userID)
+          handler(w, r.WithContext(ctx))
+      }
+  }
+
+
+func (cfg *APIConfig) Authenticate(w http.ResponseWriter, r *http.Request) uuid.UUID {
+	bearerToken, err := auth.GetBearerToken(r.Header)
+	slog.Info("Bearer token", "token", bearerToken)
+	if err != nil {
+		slog.Error("Error getting bearer token", "error", err)
+		respondWithError(w, 401, "Unauthorized")
+		return uuid.Nil
+	}
+	userID, err := auth.ValidateJWT(bearerToken, cfg.JWTSecret)
+	slog.Info("UserID", "userID", userID)
+	if err != nil {
+		slog.Error("Error validating JWT", "error", err)
+		respondWithError(w, 401, "Unauthorized")
+		return uuid.Nil
+	}
+	return userID
 }
 
 

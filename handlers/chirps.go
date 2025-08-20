@@ -26,6 +26,7 @@ type ChirpOut struct {
 }
 
 func (cfg *APIConfig) CreateChirp(w http.ResponseWriter, r *http.Request) {
+	
 	decoder := json.NewDecoder(r.Body)
 	reqChirp := ChirpIn{}
 	err := decoder.Decode(&reqChirp)
@@ -133,3 +134,5 @@ func checkForProfane(chirp string) (hasProfate bool, fixed string) {
 	}
 	return hasProfane, fixed
 }
+
+

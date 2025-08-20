@@ -27,6 +27,7 @@ func main() {
 	addr := "localhost:8080"
 	cfg := &handlers.APIConfig{
 		DBQueries: dbQueries,
+		JWTSecret: os.Getenv("JWT_SECRET"),
 	}
 
 	fileServer := cfg.MiddlewareMetricsInc(http.FileServer(http.Dir("./static")))
@@ -35,7 +36,7 @@ func main() {
 	mux.HandleFunc("GET /api/healthz", handlers.Health)
 	mux.HandleFunc("GET /admin/metrics", cfg.FSHits)
 	mux.HandleFunc("POST /admin/reset", cfg.ResetUsers)
-	mux.HandleFunc("POST /api/chirps", cfg.CreateChirp)
+	mux.HandleFunc("POST /api/chirps", cfg.RequireAuth(cfg.CreateChirp))
 	mux.HandleFunc("POST /api/users", cfg.CreateUser)
 	mux.HandleFunc("GET /api/chirps", cfg.GetChirps)
 	mux.HandleFunc("GET /api/chirps/{id}", cfg.GetChirp)

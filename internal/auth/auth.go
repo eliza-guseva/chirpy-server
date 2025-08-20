@@ -3,19 +3,24 @@ package auth
 
 import (
 	"log/slog"
-	"os"
+	"net/http"
 	"time"
+	"strings"
+	"fmt"
+
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
-	"github.com/golang-jwt/jwt/v5"
 )
+
+
 
 
 func HashPassword(password string) (string, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), 10)
 	if err != nil {
 		slog.Error("Error hashing password", "error", err)
-		os.Exit(1)
+		return "", err
 	}
 	return string(hash), nil
 }
@@ -38,7 +43,7 @@ func MakeJWT(
 		signedToken, err := token.SignedString([]byte(tokenSecret))
 		if err != nil {
 			slog.Error("Error signing token", "error", err)
-			os.Exit(1)
+			return "", err
 		}
 		return signedToken, nil
 }
@@ -50,9 +55,10 @@ func ValidateJWT(tokenString, tokenSecret string) (uuid.UUID, error) {
 		func(token *jwt.Token) (interface{}, error) {
 			return []byte(tokenSecret), nil},			
 		)
+		slog.Info("Claims", "claims", token.Claims)
 		if err != nil {
 			slog.Error("Error parsing token", "error", err)
-			os.Exit(1)
+			return uuid.Nil, err
 		}
 		if claims, ok := token.Claims.(*jwt.RegisteredClaims); ok && token.Valid {
 			return uuid.Parse(claims.Subject)
@@ -67,3 +73,16 @@ func createClaims(userID uuid.UUID, expiresIn time.Duration) jwt.RegisteredClaim
 		ExpiresAt: jwt.NewNumericDate(time.Now().UTC().Add(expiresIn)),
 		Subject: userID.String(),
 	}}
+
+
+func GetBearerToken(headers http.Header) (string, error) {
+	header := headers.Get("Authorization")
+	if header == "" {
+		return "", fmt.Errorf("no Authorization header found")
+	}
+	parts := strings.Split(header, " ")
+	if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
+		return "", fmt.Errorf("invalid Authorization header")
+	}
+	return parts[1], nil
+}
