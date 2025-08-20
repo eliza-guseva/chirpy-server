@@ -40,7 +40,7 @@ func (cfg *APIConfig) CreateChirp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_, fixed := checkForProfane(reqChirp.Body)
-	UserID, _ := uuid.Parse(reqChirp.UserID)
+	UserID, _ := r.Context().Value("userID").(uuid.UUID)
 	chirp, err := cfg.DBQueries.CreateChirp(r.Context(), 
 		db.CreateChirpParams{
 			Body: fixed,
