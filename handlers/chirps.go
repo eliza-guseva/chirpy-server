@@ -120,12 +120,15 @@ func checkForProfane(chirp string) (hasProfate bool, fixed string) {
 	fixed = chirp
 	badWords := []string{"kerfuffle", "sharbert", "fornax"}
 	for _, badWord := range badWords {
-		lowerChirp := strings.ToLower(fixed)
-		if strings.Contains(lowerChirp, badWord) {
+		for {
+			lowerChirp := strings.ToLower(fixed)
+			if ! strings.Contains(lowerChirp, badWord) {
+				break
+			}
+			bwStart := strings.Index(lowerChirp, badWord)
+			bwEnd := bwStart + len(badWord)
+			fixed = fixed[:bwStart] + "****" + fixed[bwEnd:]
 			hasProfane = true
-			badStart := strings.Index(lowerChirp, badWord)
-			badEnd := badStart + len(badWord)
-			fixed = strings.Replace(fixed, fixed[badStart:badEnd], "****", -1)
 		}
 	}
 	return hasProfane, fixed
