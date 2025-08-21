@@ -26,6 +26,7 @@ type UserOut struct {
     Email     string    `json:"email"`
 	Token     string    `json:"token"`
 	RefreshToken string `json:"refresh_token"`
+	IsChirpyRed bool    `json:"is_chirpy_red"`
 }
 
 
@@ -76,6 +77,7 @@ func (cfg *APIConfig) CreateUser(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,
 		Email:     user.Email,
+		IsChirpyRed: user.IsChirpyRed,
 	}
 	respondWithJSON(w, 201, userOut)
 }
@@ -120,6 +122,7 @@ func (cfg *APIConfig) Login(w http.ResponseWriter, r *http.Request) {
 		Email:     user.Email,
 		Token:     jwtToken,
 		RefreshToken: refreshToken,
+		IsChirpyRed: user.IsChirpyRed,
 	})
 }
 
@@ -196,20 +199,37 @@ func (cfg *APIConfig) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,
 		Email: user.Email,
+		IsChirpyRed: user.IsChirpyRed,
 	})
 }
 
 func (cfg *APIConfig) UpradeUserPolka(w http.ResponseWriter, r *http.Request) {
+	apiKey, err := auth.GetAPIKey(r.Header)
+	if err != nil {
+		slog.Error("Error getting API key", "error", err)
+		respondWithError(w, 401, "Unauthorized")
+		return
+	}
+	if apiKey != cfg.PolkaKey {
+		slog.Error("API key mismatch", "apiKey", apiKey, "cfg.PolkaKey", cfg.PolkaKey)
+		respondWithError(w, 401, "Unauthorized")
+		return
+	}
+
 	decoder := json.NewDecoder(r.Body)
 	event := PolkaIn{}
-	err := decoder.Decode(&event)
+	err = decoder.Decode(&event)
+	slog.Info("Event", "event", event)
 	if 	err != nil {
 		respondWithError(w, 400, "Invalid request body")
 		return
 	}
 	if event.Event != "user.upgraded" {
+		slog.Info("Event NOT user.upgraded", "event", event)
 		w.WriteHeader(204)
+		return
 	}
+	slog.Info("Event IS user.upgraded", "event", event)
 	_, err = cfg.DBQueries.UpgradeUser(r.Context(),uuid.MustParse(event.Data.UserID))
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -220,6 +240,8 @@ func (cfg *APIConfig) UpradeUserPolka(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, 500, "Could not upgrade user")
 		return
 	}
+	w.WriteHeader(204)
+	return
 }
 
 // HELPERS

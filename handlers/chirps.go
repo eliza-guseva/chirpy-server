@@ -64,12 +64,32 @@ func (cfg *APIConfig) CreateChirp(w http.ResponseWriter, r *http.Request) {
 
 
 func (cfg *APIConfig) GetChirps(w http.ResponseWriter, r *http.Request) {
-	chirps, err := cfg.DBQueries.GetChirps(r.Context())
+	authorID := r.URL.Query().Get("author_id")
+	slog.Info("Author ID", "authorID", authorID)
+
+	sort := r.URL.Query().Get("sort")
+	if sort != "desc" {
+		sort = "asc"
+	}
+	
+	var chirps []db.Chirp
+	var err error
+	switch {
+		case authorID != "" && sort == "desc":
+			chirps, err = cfg.DBQueries.GetChirpsByUserIDDESC(r.Context(), uuid.MustParse(authorID))
+		case authorID != "" && sort == "asc":
+			chirps, err = cfg.DBQueries.GetChirpsByUserIDASC(r.Context(), uuid.MustParse(authorID))
+		case sort == "desc":
+			chirps, err = cfg.DBQueries.GetChirpsDESC(r.Context())
+		default: // sort == "asc"
+			chirps, err = cfg.DBQueries.GetChirpsASC(r.Context())
+	}
 	if err != nil {
 		slog.Error("Error getting chirps", "error", err)
 		respondWithError(w, 500, "Something went wrong")
 		return
 	}
+
 	var chirpOut []ChirpOut	
 	for _, chirp := range chirps {
 		chirpOut = append(chirpOut, ChirpOut{

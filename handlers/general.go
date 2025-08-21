@@ -16,7 +16,9 @@ import (
 type APIConfig struct {
 	fileserverHits atomic.Int32
 	DBQueries *db.Queries
-	JWTSecret string}
+	JWTSecret string
+	PolkaKey string
+}
 
 
 func (cfg *APIConfig) MiddlewareMetricsInc(handler http.Handler) http.Handler {

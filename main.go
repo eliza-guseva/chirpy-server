@@ -29,6 +29,7 @@ func main() {
 	cfg := &handlers.APIConfig{
 		DBQueries: dbQueries,
 		JWTSecret: os.Getenv("JWT_SECRET"),
+		PolkaKey: os.Getenv("POLKA_KEY"),
 	}
 
 	fileServer := cfg.MiddlewareMetricsInc(http.FileServer(http.Dir("./static")))
@@ -44,7 +45,7 @@ func main() {
 	mux.HandleFunc("POST /api/login", cfg.Login)
 	mux.HandleFunc("POST /api/refresh", cfg.RefreshJWT)
 	mux.HandleFunc("POST /api/revoke", cfg.RevokeRT)
-	mux.HandleFunc("POST /api/polka", cfg.UpradeUserPolka)
+	mux.HandleFunc("POST /api/polka/webhooks", cfg.UpradeUserPolka)
 
 	mux.HandleFunc("GET /api/chirps", cfg.GetChirps)
 	mux.HandleFunc("POST /api/chirps", cfg.RequireAuth(cfg.CreateChirp))
