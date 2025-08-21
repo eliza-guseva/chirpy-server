@@ -44,6 +44,7 @@ func main() {
 	mux.HandleFunc("POST /api/login", cfg.Login)
 	mux.HandleFunc("POST /api/refresh", cfg.RefreshJWT)
 	mux.HandleFunc("POST /api/revoke", cfg.RevokeRT)
+	mux.HandleFunc("POST /api/polka", cfg.UpradeUserPolka)
 
 	mux.HandleFunc("GET /api/chirps", cfg.GetChirps)
 	mux.HandleFunc("POST /api/chirps", cfg.RequireAuth(cfg.CreateChirp))

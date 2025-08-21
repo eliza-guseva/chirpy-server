@@ -28,6 +28,14 @@ type UserOut struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
+
+type PolkaIn struct {
+	Event string `json:"event"`
+	Data struct {
+		UserID string `json:"user_id"`
+	} `json:"data"`
+}
+
 // HANDLERS
 
 func (cfg *APIConfig) CreateUser(w http.ResponseWriter, r *http.Request) {
@@ -143,6 +151,7 @@ func (cfg *APIConfig) RevokeRT(w http.ResponseWriter, r *http.Request) {
 	}
 	cfg.DBQueries.ExpireRefreshToken(r.Context(), refreshToken)
 	w.WriteHeader(204)
+
 }
 
 func (cfg *APIConfig) UpdateUser(w http.ResponseWriter, r *http.Request) {
@@ -188,6 +197,29 @@ func (cfg *APIConfig) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt: user.UpdatedAt,
 		Email: user.Email,
 	})
+}
+
+func (cfg *APIConfig) UpradeUserPolka(w http.ResponseWriter, r *http.Request) {
+	decoder := json.NewDecoder(r.Body)
+	event := PolkaIn{}
+	err := decoder.Decode(&event)
+	if 	err != nil {
+		respondWithError(w, 400, "Invalid request body")
+		return
+	}
+	if event.Event != "user.upgraded" {
+		w.WriteHeader(204)
+	}
+	_, err = cfg.DBQueries.UpgradeUser(r.Context(),uuid.MustParse(event.Data.UserID))
+	if err != nil {
+		if err == sql.ErrNoRows {
+			respondWithError(w, 404, "User not found")
+			return
+		}
+		slog.Error("Error upgrading user", "error", err)
+		respondWithError(w, 500, "Could not upgrade user")
+		return
+	}
 }
 
 // HELPERS
