@@ -114,6 +114,38 @@ func (cfg *APIConfig) GetChirp(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, 200, chirpOut)
 }
 
+func (cfg *APIConfig) DeleteChirp(w http.ResponseWriter, r *http.Request) {
+	chID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		slog.Error("Invalid UUID", "error", err)
+		respondWithError(w, 400, "Invalid chirp ID")
+		return
+	}
+	authUserID := r.Context().Value("userID").(uuid.UUID)
+	chirp, err := cfg.DBQueries.GetChirp(r.Context(), chID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			respondWithError(w, 404, "Chirp not found")
+			return
+		}
+		slog.Error("Error getting chirp", "error", err)
+		respondWithError(w, 500, "Something went wrong")
+		return
+	}
+	if chirp.UserID != authUserID {
+		slog.Error("User ID mismatch", "authUserID", authUserID, "chirpUserID", chirp.UserID)
+		respondWithError(w, 403, "Unauthorized")
+		return
+	}
+	err = cfg.DBQueries.DeleteChirp(r.Context(), chID)
+	if err != nil {
+		slog.Error("Error deleting chirp", "error", err)
+		respondWithError(w, 500, "Something went wrong")
+		return
+	}
+	w.WriteHeader(204)
+}
+
 // Helpers 
 
 func checkForProfane(chirp string) (hasProfate bool, fixed string) {

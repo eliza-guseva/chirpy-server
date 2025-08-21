@@ -1,15 +1,16 @@
 package main
 
 import (
-	_ "github.com/lib/pq"
+	"database/sql"
 	"fmt"
 	"log"
-	"database/sql"
-	"os"
-	"github.com/joho/godotenv"
 	"net/http"
+	"os"
+
 	"github.com/eliza-guseva/chirpy-server/handlers"
 	"github.com/eliza-guseva/chirpy-server/internal/db"
+	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
 )
 
 
@@ -36,11 +37,20 @@ func main() {
 	mux.HandleFunc("GET /api/healthz", handlers.Health)
 	mux.HandleFunc("GET /admin/metrics", cfg.FSHits)
 	mux.HandleFunc("POST /admin/reset", cfg.ResetUsers)
-	mux.HandleFunc("POST /api/chirps", cfg.RequireAuth(cfg.CreateChirp))
+
 	mux.HandleFunc("POST /api/users", cfg.CreateUser)
-	mux.HandleFunc("GET /api/chirps", cfg.GetChirps)
-	mux.HandleFunc("GET /api/chirps/{id}", cfg.GetChirp)
+	mux.HandleFunc("PUT /api/users", cfg.RequireAuth(cfg.UpdateUser))
+
 	mux.HandleFunc("POST /api/login", cfg.Login)
+	mux.HandleFunc("POST /api/refresh", cfg.RefreshJWT)
+	mux.HandleFunc("POST /api/revoke", cfg.RevokeRT)
+
+	mux.HandleFunc("GET /api/chirps", cfg.GetChirps)
+	mux.HandleFunc("POST /api/chirps", cfg.RequireAuth(cfg.CreateChirp))
+	mux.HandleFunc("GET /api/chirps/{id}", cfg.GetChirp)
+	mux.HandleFunc("DELETE /api/chirps/{id}", cfg.RequireAuth(cfg.DeleteChirp))
+
+
 
 	server := http.Server{
 		Addr:    addr,

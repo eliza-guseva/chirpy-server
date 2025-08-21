@@ -15,3 +15,5 @@ WHERE chirps.id = $1;
 -- name: ResetChirps :exec
 DELETE FROM chirps;
 
+-- name: DeleteChirp :exec
+DELETE FROM chirps WHERE id = $1;

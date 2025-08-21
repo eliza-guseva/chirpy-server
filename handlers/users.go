@@ -1,21 +1,22 @@
 package handlers
 
 import (
+	"database/sql"
 	"encoding/json"
 	"log/slog"
 	"net/http"
-	"strings"
 	"os"
+	"strings"
 	"time"
-	"database/sql"
-	"github.com/eliza-guseva/chirpy-server/internal/db"
+
 	"github.com/eliza-guseva/chirpy-server/internal/auth"
+	"github.com/eliza-guseva/chirpy-server/internal/db"
+	"github.com/google/uuid"
 )
 
 type UserIn struct {
 	Email string `json:"email"`
 	Password string `json:"password"`
-	ExpiresInSeconds int `json:"expires_in_seconds,omitempty"`
 }
 
 type UserOut struct {
@@ -24,7 +25,10 @@ type UserOut struct {
     UpdatedAt time.Time `json:"updated_at"`
     Email     string    `json:"email"`
 	Token     string    `json:"token"`
+	RefreshToken string `json:"refresh_token"`
 }
+
+// HANDLERS
 
 func (cfg *APIConfig) CreateUser(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(r.Body)
@@ -85,42 +89,21 @@ func (cfg *APIConfig) ResetUsers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (cfg *APIConfig) Login(w http.ResponseWriter, r *http.Request) {
-	decoder := json.NewDecoder(r.Body)
-	reqUser := UserIn{}
-	err := decoder.Decode(&reqUser)
-	if err != nil {
-		slog.Error("Error decoding request: %s", "error", err)
-		respondWithError(w, 400, "Could not decode request")
-		return
-	}
-	if ! strings.Contains(reqUser.Email, "@") {
-		slog.Error("Email must contain @")
-		respondWithError(w, 400, "Email must contain @")
-		return
-	}
+	reqUser, err := getRequestUser(w, r)
+	if err != nil { return }
 
-	user, err := cfg.DBQueries.GetUser(r.Context(), reqUser.Email)
-	slog.Info("User", "email", reqUser.Email, "user", user)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			respondWithError(w, 401, "Incorrect email or password")
-			return
-		}
-		slog.Error("Error getting user", "error", err)
-		respondWithError(w, 500, "Could not get user")
-		return
-	}
-	if err := auth.CheckPasswordHash(reqUser.Password, user.HashedPassword); err != nil { 
-		slog.Error("Error checking password", "error", err)
-		respondWithError(w, 401, "Incorrect email or password")
-		return
-	}
-	jwtToken, err := createTokenWithExp(reqUser, user)
+	user, err := cfg.getUser(w, r, reqUser)
+	if err != nil { return }
+	
+	jwtToken, err := createTokenWithExp(user.ID, w)
 	if err != nil {
 		slog.Error("Error creating token", "error", err)
 		respondWithError(w, 500, "Could not create token")
 		return
 	}
+	refreshToken, err := cfg.setRefreshToken(w, r, user)
+	if err != nil { return }
+	
 
 	respondWithJSON(w, 200, UserOut{
 		ID:        user.ID.String(),
@@ -128,20 +111,159 @@ func (cfg *APIConfig) Login(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt: user.UpdatedAt,
 		Email:     user.Email,
 		Token:     jwtToken,
+		RefreshToken: refreshToken,
 	})
 }
 
-func createTokenWithExp(reqUser UserIn, dbUser db.User) (string, error) {
-	hourInSec := 60*60*60
-	expiresIn := time.Duration(reqUser.ExpiresInSeconds)
-	if reqUser.ExpiresInSeconds == 0 || reqUser.ExpiresInSeconds > hourInSec {
-		expiresIn = time.Hour
+
+func (cfg *APIConfig) RefreshJWT(w http.ResponseWriter, r *http.Request) {
+	refreshToken, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		slog.Error("Error getting bearer token", "error", err)
+		respondWithError(w, 401, "Could not get bearer token")
+		return
+	}
+	dbToken, err := cfg.DBQueries.GetRefreshToken(r.Context(), refreshToken)
+	if err != nil {
+		slog.Error("Error getting refresh token", "error", err)
+		respondWithError(w, 401, "Could not get refresh token")
+		return
+	}
+	jwtToken, err := createTokenWithExp(dbToken.UserID, w)
+	if err != nil { return }
+	respondWithJSON(w, 200, map[string]string{"token": jwtToken})
+}
+
+func (cfg *APIConfig) RevokeRT(w http.ResponseWriter, r *http.Request) {
+	refreshToken, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		slog.Error("Error getting bearer token", "error", err)
+		respondWithError(w, 401, "Could not get bearer token")
+		return
+	}
+	cfg.DBQueries.ExpireRefreshToken(r.Context(), refreshToken)
+	w.WriteHeader(204)
+}
+
+func (cfg *APIConfig) UpdateUser(w http.ResponseWriter, r *http.Request) {
+	authUserID := r.Context().Value("userID").(uuid.UUID)
+	slog.Info("Auth user ID", "authUserID", authUserID)
+	reqUser, err := getRequestUser(w, r)
+	slog.Info("Request user", "reqUser", reqUser)
+	if err != nil { return }
+
+	dbUser, err := cfg.DBQueries.GetUserByID(r.Context(), authUserID)
+	if err != nil { 
+		slog.Error("Error getting user", "error", err)
+		respondWithError(w, 500, "Could not get user")
+		return
+	}
+	if dbUser.ID != authUserID {
+		slog.Error("User ID mismatch", "authUserID", authUserID, "dbUser", dbUser.ID)
+		respondWithError(w, 401, "Unauthorized")
+		return
+	}
+	hashedPassword, err := auth.HashPassword(reqUser.Password)
+	if err != nil {
+		slog.Error("Error hashing password", "error", err)
+		respondWithError(w, 500, "Could not hash password")
+		return
 	}
 	
-	jwtToken, err := auth.MakeJWT(dbUser.ID, os.Getenv("JWT_SECRET"), expiresIn)
+	user, err := cfg.DBQueries.UpdateUser(r.Context(), db.UpdateUserParams{
+		ID: dbUser.ID,
+		Email: reqUser.Email,
+		HashedPassword: hashedPassword,
+	})
+	
+	if err != nil {
+		slog.Error("Error updating user", "error", err)
+		respondWithError(w, 500, "Could not update user")
+		return
+	}
+	
+	respondWithJSON(w, 200, UserOut{
+		ID: user.ID.String(),
+		CreatedAt: user.CreatedAt,
+		UpdatedAt: user.UpdatedAt,
+		Email: user.Email,
+	})
+}
+
+// HELPERS
+
+func createTokenWithExp(userID uuid.UUID, w http.ResponseWriter) (string, error) {
+	jwtToken, err := auth.MakeJWT(userID, os.Getenv("JWT_SECRET"), time.Hour)
 	if err != nil {
 		slog.Error("Error creating token", "error", err)
+		respondWithError(w, 500, "Could not create token")
 		return "", err
 	}
 	return jwtToken, nil
+}
+
+func getRequestUser(w http.ResponseWriter, r *http.Request) (UserIn, error) {
+	decoder := json.NewDecoder(r.Body)
+	reqUser := UserIn{}
+	err := decoder.Decode(&reqUser)
+	if err != nil {
+		slog.Error("Error decoding request: %s", "error", err)
+		respondWithError(w, 400, "Could not decode request")
+		return UserIn{}, err	
+	 }
+	if ! strings.Contains(reqUser.Email, "@") {
+		slog.Error("Email must contain @")
+		respondWithError(w, 400, "Email must contain @")
+		return UserIn{}, err
+	}
+	return reqUser, nil
+}
+
+
+func (cfg *APIConfig) getUser(
+	w http.ResponseWriter, 
+	r *http.Request, 
+	reqUser UserIn,
+) (db.User, error) {
+	user, err := cfg.DBQueries.GetUser(r.Context(), reqUser.Email)
+	slog.Info("User", "email", reqUser.Email, "user", user)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			respondWithError(w, 401, "Incorrect email or password")
+			return db.User{}, err
+		}
+		slog.Error("Error getting user", "error", err)
+		respondWithError(w, 500, "Could not get user")
+		return db.User{}, err
+	}
+	if err := auth.CheckPasswordHash(reqUser.Password, user.HashedPassword); err != nil { 
+		slog.Error("Error checking password", "error", err)
+		respondWithError(w, 401, "Incorrect email or password")
+		return db.User{}, err
+	}
+	return user, nil
+}
+
+
+func (cfg *APIConfig) setRefreshToken(w http.ResponseWriter, r *http.Request, user db.User) (string, error) {
+	refreshToken, err := auth.MakeRefreshToken()
+	if err != nil {
+		slog.Error("Error creating refresh token", "error", err)
+		respondWithError(w, 500, "Could not create refresh token")
+		return "", err	
+	}
+	_, err = cfg.DBQueries.CreateRefreshToken(
+		r.Context(),
+		db.CreateRefreshTokenParams{
+			Token: refreshToken,
+			UserID: user.ID,
+			ExpiresAt: time.Now().Add(time.Hour * 24 * 60),
+		},
+	)
+	if err != nil {
+		slog.Error("Error expiring refresh token", "error", err)
+		respondWithError(w, 500, "Could not expire refresh token")
+		return "", err
+	}
+	return refreshToken, nil
 }

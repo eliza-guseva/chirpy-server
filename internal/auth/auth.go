@@ -2,11 +2,13 @@
 package auth
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
 	"log/slog"
 	"net/http"
-	"time"
 	"strings"
-	"fmt"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -55,7 +57,6 @@ func ValidateJWT(tokenString, tokenSecret string) (uuid.UUID, error) {
 		func(token *jwt.Token) (interface{}, error) {
 			return []byte(tokenSecret), nil},			
 		)
-		slog.Info("Claims", "claims", token.Claims)
 		if err != nil {
 			slog.Error("Error parsing token", "error", err)
 			return uuid.Nil, err
@@ -85,4 +86,11 @@ func GetBearerToken(headers http.Header) (string, error) {
 		return "", fmt.Errorf("invalid Authorization header")
 	}
 	return parts[1], nil
+}
+
+func MakeRefreshToken() (string, error) {
+	key := make([]byte, 32)
+	_, err := rand.Read(key)
+	if err != nil {return "", err}
+	return hex.EncodeToString(key), nil
 }
